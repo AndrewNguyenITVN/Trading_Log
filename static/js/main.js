@@ -302,19 +302,31 @@ async function deleteTrade(tradeId) {
     try {
         const response = await fetch(`/api/trades/${tradeId}`, {
             method: 'DELETE',
+            headers: {
+                'Accept': 'application/json'
+            }
         });
 
+        const data = await response.json();
+
         if (response.ok) {
+            // Remove trade from the list
             trades = trades.filter(t => t.id !== tradeId);
+            // Update UI
             displayTrades(trades);
             loadStatistics();
+            // Hide trade detail if it's showing the deleted trade
+            const tradeDetail = document.getElementById('tradeDetail');
+            if (tradeDetail.style.display === 'block') {
+                tradeDetail.style.display = 'none';
+            }
             showAlert('Trade deleted successfully!', 'success');
         } else {
-            throw new Error('Failed to delete trade');
+            throw new Error(data.error || 'Failed to delete trade');
         }
     } catch (error) {
         console.error('Error deleting trade:', error);
-        showAlert('Error deleting trade. Please try again.', 'danger');
+        showAlert(error.message || 'Error deleting trade. Please try again.', 'danger');
     }
 }
 

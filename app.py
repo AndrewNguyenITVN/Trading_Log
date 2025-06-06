@@ -85,10 +85,29 @@ def update_trade(trade_id):
 
 @app.route('/api/trades/<int:trade_id>', methods=['DELETE'])
 def delete_trade(trade_id):
-    trade = Trade.query.get_or_404(trade_id)
-    db.session.delete(trade)
-    db.session.commit()
-    return '', 204
+    try:
+        # Get the trade
+        trade = Trade.query.get_or_404(trade_id)
+        
+        # Delete associated images first
+        for image in trade.images:
+            # Delete image file from uploads directory
+            if image.image_path:
+                image_path = os.path.join(app.config['UPLOAD_FOLDER'], image.image_path)
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+            # Delete image record from database
+            db.session.delete(image)
+        
+        # Delete the trade
+        db.session.delete(trade)
+        db.session.commit()
+        
+        return jsonify({'message': 'Trade deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting trade {trade_id}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/trades/<int:trade_id>/images', methods=['POST'])
 def upload_trade_image(trade_id):
