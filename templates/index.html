@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Journal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Trading Journal</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#trades">Trades</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#statistics">Statistics</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- Dashboard Section -->
+            <div id="dashboard" class="col-12">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Total Trades</h5>
+                                <h2 id="totalTrades">0</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Win Rate</h5>
+                                <h2 id="winRate">0%</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Profit Factor</h5>
+                                <h2 id="profitFactor">0</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Expectancy</h5>
+                                <h2 id="expectancy">0</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trades Section -->
+            <div id="trades" class="col-12 mt-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Trades</h5>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTradeModal">
+                            <i class="bi bi-plus"></i> Add Trade
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="tradesList">
+                            <!-- Trades will be grouped by date here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trade Detail Section -->
+            <div id="tradeDetail" class="col-12 mt-4" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Trade Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Entry Setup</h6>
+                                <div id="entryImages" class="trade-images">
+                                    <!-- Entry images will be displayed here -->
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Exit Result</h6>
+                                <div id="exitImages" class="trade-images">
+                                    <!-- Exit images will be displayed here -->
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <h6>Trade Information</h6>
+                                <div id="tradeInfo" class="table-responsive">
+                                    <!-- Trade details will be displayed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Trade Modal -->
+    <div class="modal fade" id="addTradeModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Trade</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addTradeForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Entry Date/Time</label>
+                                <input type="datetime-local" class="form-control" name="entry_datetime" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Exit Date/Time</label>
+                                <input type="datetime-local" class="form-control" name="exit_datetime" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Instrument</label>
+                                <input type="text" class="form-control" name="instrument" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Order Type</label>
+                                <select class="form-select" name="order_type" required>
+                                    <option value="BUY">BUY</option>
+                                    <option value="SELL">SELL</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Entry Price</label>
+                                <input type="number" step="0.00001" class="form-control" name="entry_price" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Exit Price</label>
+                                <input type="number" step="0.00001" class="form-control" name="exit_price" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Initial Stop Loss</label>
+                                <input type="number" step="0.00001" class="form-control" name="initial_stop_loss"
+                                    required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Initial Take Profit</label>
+                                <input type="number" step="0.00001" class="form-control" name="initial_take_profit"
+                                    required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Position Size</label>
+                                <input type="number" step="0.01" class="form-control" name="position_size" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Status</label>
+                                <select class="form-select" name="status" required>
+                                    <option value="WIN">WIN</option>
+                                    <option value="LOSS">LOSS</option>
+                                    <option value="BREAKEVEN">BREAKEVEN</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Rationale</label>
+                            <textarea class="form-control" name="rationale" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Review</label>
+                            <textarea class="form-control" name="review" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Emotions</label>
+                            <input type="text" class="form-control" name="emotions">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Tags</label>
+                            <input type="text" class="form-control" name="tags" placeholder="Separate tags with commas">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Trade Images</label>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-body">
+                                            <h6 class="card-title">Entry Setup</h6>
+                                            <input type="file" class="form-control" name="entry_image" accept="image/*">
+                                            <textarea class="form-control mt-2" name="entry_image_description"
+                                                placeholder="Description"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-body">
+                                            <h6 class="card-title">Exit Result</h6>
+                                            <input type="file" class="form-control" name="exit_image" accept="image/*">
+                                            <textarea class="form-control mt-2" name="exit_image_description"
+                                                placeholder="Description"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="saveTrade">Save Trade</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+
+</html>
