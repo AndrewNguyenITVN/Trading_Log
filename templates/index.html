@@ -8,6 +8,283 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // --- INITIALIZATION ---
+            loadTrades();
+            setupEventListeners();
+        });
+
+        // --- EVENT LISTENERS SETUP ---
+        function setupEventListeners() {
+            // Event delegation for trade actions
+            document.getElementById('tradesTableBody').addEventListener('click', function (e) {
+                const target = e.target;
+                if (target.closest('.view-trade')) {
+                    const tradeId = target.closest('tr').dataset.tradeId;
+                    loadTradeDetails(tradeId);
+                } else if (target.closest('.edit-trade')) {
+                    const tradeId = target.closest('tr').dataset.tradeId;
+                    loadTradeForEdit(tradeId);
+                } else if (target.closest('.delete-trade')) {
+                    const tradeId = target.closest('tr').dataset.tradeId;
+                    deleteTrade(tradeId);
+                }
+            });
+
+            // Add/Edit Modal
+            const addTradeModal = document.getElementById('addTradeModal');
+            addTradeModal.addEventListener('hidden.bs.modal', function () {
+                document.getElementById('addTradeForm').reset();
+                delete document.getElementById('addTradeForm').dataset.editId;
+                // Reset title after edit
+                document.querySelector('#addTradeModal .modal-title').textContent = 'Add New Trade';
+            });
+
+            // Save trade button
+            document.getElementById('saveTrade').addEventListener('click', handleSaveTrade);
+
+            // Close trade detail view
+            document.getElementById('closeTradeDetail').addEventListener('click', () => {
+                document.getElementById('tradeDetail').style.display = 'none';
+            });
+
+            // Auto-calculation in form
+            const form = document.getElementById('addTradeForm');
+            form.addEventListener('input', calculateTradeMetrics);
+        }
+
+        // --- API & DATA HANDLING ---
+
+        // Load all trades from the server
+        async function loadTrades() {
+            try {
+                const response = await fetch('/api/trades');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const trades = await response.json();
+                const tbody = document.getElementById('tradesTableBody');
+                // Ensure tbody exists before trying to modify it
+                if (tbody) {
+                    tbody.innerHTML = trades.map(formatTradeRow).join('');
+                } else {
+                    console.error('Critical: tradesTableBody element not found in DOM.');
+                }
+            } catch (error) {
+                console.error('Failed to load trades:', error);
+                alert('Could not load trades. See console for details.');
+            }
+        }
+
+        // Load details for a single trade
+        async function loadTradeDetails(tradeId) {
+            try {
+                const response = await fetch(`/api/trades/${tradeId}`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const trade = await response.json();
+                showTradeDetails(trade);
+            } catch (error) {
+                console.error('Failed to load trade details:', error);
+                alert('Could not load trade details. See console for details.');
+            }
+        }
+
+        // Load trade data into the modal for editing
+        async function loadTradeForEdit(tradeId) {
+            try {
+                const response = await fetch(`/api/trades/${tradeId}`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const trade = await response.json();
+
+                const form = document.getElementById('addTradeForm');
+                form.dataset.editId = trade.id;
+
+                // Populate form
+                document.querySelector('#addTradeModal .modal-title').textContent = `Edit Trade #${trade.id}`;
+                form.querySelector('[name="entry_datetime"]').value = trade.entry_datetime ? trade.entry_datetime
+                    .slice(0, 16) : '';
+                form.querySelector('[name="exit_datetime"]').value = trade.exit_datetime ? trade.exit_datetime
+                    .slice(0, 16) : '';
+                form.querySelector('[name="instrument"]').value = trade.instrument || '';
+                form.querySelector('[name="order_type"]').value = trade.order_type || 'BUY';
+                form.querySelector('[name="entry_price"]').value = trade.entry_price || '';
+                form.querySelector('[name="exit_price"]').value = trade.exit_price || '';
+                form.querySelector('[name="initial_stop_loss"]').value = trade.initial_stop_loss || '';
+                form.querySelector('[name="initial_take_profit"]').value = trade.initial_take_profit || '';
+                form.querySelector('[name="position_size"]').value = trade.position_size || '';
+                form.querySelector('[name="status"]').value = trade.status || 'WIN';
+                form.querySelector('[name="rationale"]').value = trade.rationale || '';
+                form.querySelector('[name="review"]').value = trade.review || '';
+                form.querySelector('[name="emotions"]').value = trade.emotions || '';
+                form.querySelector('[name="tags"]').value = trade.tags || '';
+                form.querySelector('[name="net_profit"]').value = trade.net_profit || '';
+                form.querySelector('[name="r_value"]').value = trade.r_value || '';
+
+                const modal = new bootstrap.Modal(document.getElementById('addTradeModal'));
+                modal.show();
+            } catch (error) {
+                console.error('Failed to load trade for editing:', error);
+                alert('Could not load trade for editing. See console for details.');
+            }
+        }
+
+        // Handle form submission for both creating and updating trades
+        async function handleSaveTrade() {
+            const form = document.getElementById('addTradeForm');
+            const tradeId = form.dataset.editId;
+            const formData = new FormData(form);
+
+            // Ensure calculated fields are on the form data
+            formData.set('net_profit', form.querySelector('[name="net_profit"]').value || 0);
+            formData.set('r_value', form.querySelector('[name="r_value"]').value || 0);
+
+            const url = tradeId ? `/api/trades/${tradeId}` : '/api/trades';
+            const method = tradeId ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    body: formData // No 'Content-Type' header, browser sets it for FormData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addTradeModal'));
+                modal.hide();
+                loadTrades();
+                alert('Trade saved successfully!');
+
+            } catch (error) {
+                console.error('Failed to save trade:', error);
+                alert(`Could not save trade: ${error.message}`);
+            }
+        }
+
+        // Delete a trade
+        async function deleteTrade(tradeId) {
+            if (!confirm(`Are you sure you want to delete trade #${tradeId}?`)) return;
+
+            try {
+                const response = await fetch(`/api/trades/${tradeId}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                alert('Trade deleted successfully!');
+                loadTrades();
+                document.getElementById('tradeDetail').style.display = 'none';
+
+            } catch (error) {
+                console.error('Failed to delete trade:', error);
+                alert('Could not delete trade. See console for details.');
+            }
+        }
+
+
+        // --- UI RENDERING & HELPERS ---
+
+        // Create HTML for a single trade row
+        function formatTradeRow(trade) {
+            const pnlClass = trade.net_profit > 0 ? 'text-success' : trade.net_profit < 0 ? 'text-danger' : '';
+            const statusBadge = trade.status === 'WIN' ? 'bg-success' : trade.status === 'LOSS' ? 'bg-danger' :
+                'bg-secondary';
+
+            return `
+                <tr data-trade-id="${trade.id}">
+                    <td>${new Date(trade.entry_datetime).toLocaleDateString()}</td>
+                    <td>${trade.instrument}</td>
+                    <td>${trade.order_type}</td>
+                    <td class="${pnlClass}">${Number(trade.net_profit).toFixed(2)}</td>
+                    <td><span class="badge ${statusBadge}">${trade.status}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary view-trade" title="View"><i class="bi bi-eye"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary edit-trade" title="Edit"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-danger delete-trade" title="Delete"><i class="bi bi-trash"></i></button>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // Display the details of a selected trade
+        function showTradeDetails(trade) {
+            const detailView = document.getElementById('tradeDetail');
+
+            // Populate fields
+            document.getElementById('tradeInstrument').textContent = trade.instrument || 'N/A';
+            document.getElementById('tradeOrderType').textContent = trade.order_type || 'N/A';
+            document.getElementById('tradeEntryDateTime').textContent = trade.entry_datetime ? new Date(trade
+                .entry_datetime).toLocaleString() : 'N/A';
+            document.getElementById('tradeExitDateTime').textContent = trade.exit_datetime ? new Date(trade
+                .exit_datetime).toLocaleString() : 'N/A';
+            document.getElementById('tradeEntryPrice').textContent = trade.entry_price || 'N/A';
+            document.getElementById('tradeExitPrice').textContent = trade.exit_price || 'N/A';
+            document.getElementById('tradeStopLoss').textContent = trade.initial_stop_loss || 'N/A';
+            document.getElementById('tradeTakeProfit').textContent = trade.initial_take_profit || 'N/A';
+            document.getElementById('tradePositionSize').textContent = trade.position_size || 'N/A';
+            document.getElementById('tradeStatus').textContent = trade.status || 'N/A';
+            document.getElementById('tradeRationale').textContent = trade.rationale || 'No rationale provided.';
+            document.getElementById('tradeReview').textContent = trade.review || 'No review provided.';
+            document.getElementById('tradeEmotions').textContent = trade.emotions || 'No emotions recorded.';
+            document.getElementById('tradeTags').textContent = trade.tags || 'No tags.';
+
+            // Render images
+            const entryImagesDiv = document.getElementById('entryImages');
+            const exitImagesDiv = document.getElementById('exitImages');
+            entryImagesDiv.innerHTML = '';
+            exitImagesDiv.innerHTML = '';
+
+            if (trade.images && trade.images.length > 0) {
+                trade.images.forEach(img => {
+                    const container = img.image_type === 'ENTRY' ? entryImagesDiv : exitImagesDiv;
+                    container.innerHTML += `
+                        <div class="trade-image-item">
+                            <img src="/uploads/${img.image_path}" class="img-fluid" alt="Trade image">
+                            <p class="small text-muted mt-1">${img.description || ''}</p>
+                        </div>
+                    `;
+                });
+            }
+
+            detailView.style.display = 'block';
+            detailView.scrollIntoView({
+                behavior: 'smooth'
+            });
+        }
+
+        // Calculate Net Profit and R-Value in the form
+        function calculateTradeMetrics() {
+            const form = document.getElementById('addTradeForm');
+            const entryPrice = parseFloat(form.querySelector('[name="entry_price"]').value);
+            const exitPrice = parseFloat(form.querySelector('[name="exit_price"]').value);
+            const positionSize = parseFloat(form.querySelector('[name="position_size"]').value);
+            const orderType = form.querySelector('[name="order_type"]').value;
+            const initialStopLoss = parseFloat(form.querySelector('[name="initial_stop_loss"]').value);
+
+            if (isNaN(entryPrice) || isNaN(exitPrice) || isNaN(positionSize) || isNaN(initialStopLoss)) {
+                form.querySelector('[name="net_profit"]').value = '';
+                form.querySelector('[name="r_value"]').value = '';
+                return;
+            }
+
+            let netProfit = 0;
+            if (orderType === 'BUY') {
+                netProfit = (exitPrice - entryPrice) * positionSize;
+            } else { // SELL
+                netProfit = (entryPrice - exitPrice) * positionSize;
+            }
+            form.querySelector('[name="net_profit"]').value = netProfit.toFixed(5);
+
+            let rValue = 0;
+            const risk = Math.abs(entryPrice - initialStopLoss);
+            if (risk > 0) {
+                const reward = Math.abs(exitPrice - entryPrice);
+                rValue = reward / risk;
+            }
+            form.querySelector('[name="r_value"]').value = rValue.toFixed(5);
+        }
+    </script>
 </head>
 
 <body>
@@ -78,44 +355,118 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Trades</h5>
-                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTradeModal">
-                            <i class="bi bi-plus"></i> Add Trade
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <div id="tradesList">
-                            <!-- Trades will be grouped by date here -->
+                        <div class="d-flex align-items-center">
+                            <button class="btn btn-outline-primary me-2" id="prevWeek">
+                                <i class="bi bi-chevron-left"></i> Previous Week
+                            </button>
+                            <span id="weekRange" class="mx-3"></span>
+                            <button class="btn btn-outline-primary me-2" id="nextWeek">
+                                Next Week <i class="bi bi-chevron-right"></i>
+                            </button>
+                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTradeModal">
+                                <i class="bi bi-plus"></i> Add Trade
+                            </button>
                         </div>
                     </div>
-                </div>
-            </div>
+                    <div class="card-body">
+                        <div id="weeklyTrades">
+                            <!-- Weekly trades will be displayed here -->
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Instrument</th>
+                                        <th>Type</th>
+                                        <th>P/L</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tradesTableBody">
+                                    <!-- Trades will be displayed here -->
+                                </tbody>
+                            </table>
+                        </div>
 
-            <!-- Trade Detail Section -->
-            <div id="tradeDetail" class="col-12 mt-4" style="display: none;">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Trade Details</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>Entry Setup</h6>
-                                <div id="entryImages" class="trade-images">
-                                    <!-- Entry images will be displayed here -->
+                        <!-- Trade Detail Section -->
+                        <div id="tradeDetail" class="mt-4" style="display: none;">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0">Trade Details</h5>
+                                    <button type="button" class="btn-close" id="closeTradeDetail"></button>
                                 </div>
-                            </div>
-                            <div class="col-md-6">
-                                <h6>Exit Result</h6>
-                                <div id="exitImages" class="trade-images">
-                                    <!-- Exit images will be displayed here -->
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row mt-4">
-                            <div class="col-12">
-                                <h6>Trade Information</h6>
-                                <div id="tradeInfo" class="table-responsive">
-                                    <!-- Trade details will be displayed here -->
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <h6>Entry Setup</h6>
+                                            <div id="entryImages" class="trade-images">
+                                                <!-- Entry images will be displayed here -->
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6>Exit Result</h6>
+                                            <div id="exitImages" class="trade-images">
+                                                <!-- Exit images will be displayed here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row mt-4">
+                                        <div class="col-12">
+                                            <h6>Trade Information</h6>
+                                            <div id="tradeInfo" class="table-responsive">
+                                                <table class="table table-bordered">
+                                                    <tbody>
+                                                        <tr>
+                                                            <th>Instrument</th>
+                                                            <td id="tradeInstrument"></td>
+                                                            <th>Order Type</th>
+                                                            <td id="tradeOrderType"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Entry Date/Time</th>
+                                                            <td id="tradeEntryDateTime"></td>
+                                                            <th>Exit Date/Time</th>
+                                                            <td id="tradeExitDateTime"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Entry Price</th>
+                                                            <td id="tradeEntryPrice"></td>
+                                                            <th>Exit Price</th>
+                                                            <td id="tradeExitPrice"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Initial Stop Loss</th>
+                                                            <td id="tradeStopLoss"></td>
+                                                            <th>Initial Take Profit</th>
+                                                            <td id="tradeTakeProfit"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Position Size</th>
+                                                            <td id="tradePositionSize"></td>
+                                                            <th>Status</th>
+                                                            <td id="tradeStatus"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Rationale</th>
+                                                            <td colspan="3" id="tradeRationale"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Review</th>
+                                                            <td colspan="3" id="tradeReview"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Emotions</th>
+                                                            <td colspan="3" id="tradeEmotions"></td>
+                                                        </tr>
+                                                        <tr>
+                                                            <th>Tags</th>
+                                                            <td colspan="3" id="tradeTags"></td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -194,6 +545,16 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Net Profit</label>
+                                <input type="number" step="0.00001" class="form-control" name="net_profit" readonly>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">R Value</label>
+                                <input type="number" step="0.00001" class="form-control" name="r_value" readonly>
+                            </div>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label">Rationale</label>
                             <textarea class="form-control" name="rationale" rows="3"></textarea>
@@ -247,7 +608,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 
 </html>

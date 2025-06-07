@@ -3,6 +3,7 @@
 // Global variables
 let trades = [];
 let statistics = {};
+let currentWeekOffset = 0;
 
 // DOM Elements
 const tradesTableBody = document.getElementById('tradesTableBody');
@@ -15,7 +16,7 @@ const saveTradeButton = document.getElementById('saveTrade');
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
-    loadTrades();
+    loadWeeklyTrades();
     loadStatistics();
     setupEventListeners();
 });
@@ -46,6 +47,18 @@ async function loadStatistics() {
     } catch (error) {
         console.error('Error loading statistics:', error);
         showAlert('Error loading statistics. Please try again.', 'danger');
+    }
+}
+
+// Load weekly trades
+async function loadWeeklyTrades() {
+    try {
+        const response = await fetch(`/api/trades/weekly?week_offset=${currentWeekOffset}`);
+        const data = await response.json();
+        displayWeeklyTrades(data);
+    } catch (error) {
+        console.error('Error loading weekly trades:', error);
+        showAlert('Error loading trades. Please try again.', 'danger');
     }
 }
 
@@ -313,8 +326,8 @@ async function deleteTrade(tradeId) {
             // Remove trade from the list
             trades = trades.filter(t => t.id !== tradeId);
             // Update UI
-            displayTrades(trades);
-            loadStatistics();
+            await loadWeeklyTrades();
+            await loadStatistics();
             // Hide trade detail if it's showing the deleted trade
             const tradeDetail = document.getElementById('tradeDetail');
             if (tradeDetail.style.display === 'block') {
@@ -356,37 +369,27 @@ function updateDashboard() {
     expectancyElement.textContent = formatNumber(statistics.expectancy);
 }
 
-// Save new trade
+// Save trade
 async function saveTrade() {
     const formData = new FormData(addTradeForm);
-    const tradeData = Object.fromEntries(formData.entries());
-
-    // Validate required fields
-    if (!tradeData.entry_datetime || !tradeData.exit_datetime) {
-        showAlert('Please enter both entry and exit times', 'danger');
-        return;
-    }
-
-    // Calculate R value and net profit
-    const entryPrice = parseFloat(tradeData.entry_price);
-    const exitPrice = parseFloat(tradeData.exit_price);
-    const stopLoss = parseFloat(tradeData.initial_stop_loss);
-    const positionSize = parseFloat(tradeData.position_size);
-
-    // Calculate risk amount (R value)
-    const riskAmount = Math.abs(entryPrice - stopLoss) * positionSize;
-
-    // Calculate net profit
-    let netProfit;
-    if (tradeData.order_type === 'BUY') {
-        netProfit = (exitPrice - entryPrice) * positionSize;
-    } else {
-        netProfit = (entryPrice - exitPrice) * positionSize;
-    }
-
-    // Add calculated values to trade data
-    tradeData.r_value = riskAmount;
-    tradeData.net_profit = netProfit;
+    const tradeData = {
+        entry_datetime: formData.get('entry_datetime'),
+        exit_datetime: formData.get('exit_datetime'),
+        instrument: formData.get('instrument'),
+        order_type: formData.get('order_type'),
+        entry_price: parseFloat(formData.get('entry_price')),
+        exit_price: parseFloat(formData.get('exit_price')),
+        initial_stop_loss: parseFloat(formData.get('initial_stop_loss')),
+        initial_take_profit: parseFloat(formData.get('initial_take_profit')),
+        position_size: parseFloat(formData.get('position_size')),
+        status: formData.get('status'),
+        net_profit: parseFloat(formData.get('net_profit')),
+        r_value: parseFloat(formData.get('r_value')),
+        rationale: formData.get('rationale'),
+        review: formData.get('review'),
+        emotions: formData.get('emotions'),
+        tags: formData.get('tags')
+    };
 
     try {
         // First, save the trade
@@ -429,9 +432,16 @@ async function saveTrade() {
                 });
             }
 
+            // Add new trade to the trades array
             trades.unshift(newTrade);
-            displayTrades(trades);
-            loadStatistics();
+
+            // Reload weekly trades to show the new trade
+            await loadWeeklyTrades();
+
+            // Update statistics
+            await loadStatistics();
+
+            // Close modal and show success message
             closeModal('addTradeModal');
             showAlert('Trade saved successfully!', 'success');
         } else {
@@ -439,7 +449,7 @@ async function saveTrade() {
         }
     } catch (error) {
         console.error('Error saving trade:', error);
-        showAlert('Error saving trade. Please try again.', 'danger');
+        showAlert(error.message || 'Error saving trade. Please try again.', 'danger');
     }
 }
 
@@ -477,4 +487,102 @@ function closeModal(modalId) {
         modal.hide();
     }
     addTradeForm.reset();
-} 
+}
+
+// Display weekly trades
+function displayWeeklyTrades(data) {
+    const weeklyTrades = document.getElementById('weeklyTrades');
+    const weekRange = document.getElementById('weekRange');
+
+    // Update week range display
+    weekRange.textContent = `${formatDate(data.week_start)} - ${formatDate(data.week_end)}`;
+
+    // Create weekly view
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-bordered weekly-trades-table">
+                <thead>
+                    <tr>
+                        <th style="width: 150px;">Date</th>
+                        <th>Trades</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    data.days.forEach(day => {
+        html += `
+            <tr>
+                <td class="day-header">
+                    <div class="d-flex flex-column">
+                        <span class="weekday">${new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' })}</span>
+                        <span class="date">${new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    </div>
+                </td>
+                <td>
+                    ${day.trades.length === 0 ?
+                '<div class="no-trades">No trades for this day</div>' :
+                '<div class="trades-list">' +
+                day.trades.map(trade => `
+                            <div class="trade-item" data-trade-id="${trade.id}">
+                                <div class="trade-time">${new Date(trade.entry_datetime).toLocaleTimeString()}</div>
+                                <div class="trade-info">
+                                    <span class="trade-instrument">${trade.instrument}</span>
+                                    <span class="trade-type">${trade.order_type}</span>
+                                    <span class="trade-status ${trade.status.toLowerCase()}">${trade.status}</span>
+                                    <span class="trade-pl ${trade.status === 'WIN' ? 'text-success' : trade.status === 'LOSS' ? 'text-danger' : 'text-warning'}">
+                                        ${calculatePL(trade)}
+                                    </span>
+                                </div>
+                            </div>
+                        `).join('') +
+                '</div>'
+            }
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    weeklyTrades.innerHTML = html;
+
+    // Add click event listeners to trade items
+    document.querySelectorAll('.trade-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const tradeId = parseInt(item.dataset.tradeId);
+            const trade = trades.find(t => t.id === tradeId);
+            if (trade) {
+                showTradeDetail(trade);
+            }
+        });
+    });
+}
+
+// Format date for display
+function formatDate(dateStr) {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+// Event listeners for week navigation
+document.getElementById('prevWeek').addEventListener('click', () => {
+    currentWeekOffset++;
+    loadWeeklyTrades();
+});
+
+document.getElementById('nextWeek').addEventListener('click', () => {
+    if (currentWeekOffset > 0) {
+        currentWeekOffset--;
+        loadWeeklyTrades();
+    }
+}); 
