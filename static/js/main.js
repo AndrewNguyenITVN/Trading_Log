@@ -16,25 +16,40 @@ const saveTradeButton = document.getElementById('saveTrade');
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
+    setupEventListeners();
     loadWeeklyTrades();
     loadStatistics();
-    setupEventListeners();
 });
 
 // Event Listeners
 function setupEventListeners() {
     saveTradeButton.addEventListener('click', saveTrade);
-}
 
-// Load trades from the API
-async function loadTrades() {
-    try {
-        const response = await fetch('/api/trades');
-        trades = await response.json();
-        displayTrades(trades);
-    } catch (error) {
-        console.error('Error loading trades:', error);
-        showAlert('Error loading trades. Please try again.', 'danger');
+    // Week navigation
+    document.getElementById('prevWeek').addEventListener('click', () => {
+        currentWeekOffset++;
+        loadWeeklyTrades();
+    });
+
+    document.getElementById('nextWeek').addEventListener('click', () => {
+        currentWeekOffset--;
+        loadWeeklyTrades();
+    });
+
+    document.getElementById('todayWeek').addEventListener('click', () => {
+        currentWeekOffset = 0;
+        loadWeeklyTrades();
+    });
+
+    // Close trade detail view
+    const closeBtn = document.getElementById('closeTradeDetail');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            const detailView = document.getElementById('tradeDetail');
+            if (detailView) {
+                detailView.style.display = 'none';
+            }
+        });
     }
 }
 
@@ -55,6 +70,10 @@ async function loadWeeklyTrades() {
     try {
         const response = await fetch(`/api/trades/weekly?week_offset=${currentWeekOffset}`);
         const data = await response.json();
+
+        // Flatten trades from all days into the global trades array
+        trades = data.days.flatMap(day => day.trades);
+
         displayWeeklyTrades(data);
     } catch (error) {
         console.error('Error loading weekly trades:', error);
@@ -62,242 +81,155 @@ async function loadWeeklyTrades() {
     }
 }
 
-// Display trades grouped by date
-function displayTrades(trades) {
-    const tradesList = document.getElementById('tradesList');
-    tradesList.innerHTML = '';
+// Display weekly trades
+function displayWeeklyTrades(data) {
+    const weeklyTradesContainer = document.getElementById('weeklyTrades');
+    const weekRange = document.getElementById('weekRange');
 
-    // Group trades by date
-    const tradesByDate = trades.reduce((groups, trade) => {
-        const date = new Date(trade.entry_datetime).toLocaleDateString();
-        if (!groups[date]) {
-            groups[date] = [];
-        }
-        groups[date].push(trade);
-        return groups;
-    }, {});
+    if (!weeklyTradesContainer || !weekRange) {
+        console.error('UI elements for weekly display not found!');
+        return;
+    }
 
-    // Sort dates in descending order
-    const sortedDates = Object.keys(tradesByDate).sort((a, b) => new Date(b) - new Date(a));
+    // Update week range display
+    weekRange.textContent = `${formatDate(data.week_start)} - ${formatDate(data.week_end)}`;
 
-    // Create trade cards for each date
-    sortedDates.forEach(date => {
-        const dateGroup = document.createElement('div');
-        dateGroup.className = 'trade-day';
+    // Create weekly view table
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-bordered weekly-trades-table">
+                <thead>
+                    <tr>
+                        <th style="width: 150px;">Date</th>
+                        <th>Trades</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
 
-        const dateHeader = document.createElement('div');
-        dateHeader.className = 'trade-day-header';
-        dateHeader.textContent = date;
-        dateGroup.appendChild(dateHeader);
-
-        tradesByDate[date].forEach(trade => {
-            const tradeCard = createTradeCard(trade);
-            dateGroup.appendChild(tradeCard);
-        });
-
-        tradesList.appendChild(dateGroup);
-    });
-}
-
-// Create a trade card
-function createTradeCard(trade) {
-    const card = document.createElement('div');
-    card.className = `trade-card ${trade.status.toLowerCase()}`;
-    card.onclick = () => showTradeDetail(trade);
-
-    const cardBody = document.createElement('div');
-    cardBody.className = 'card-body';
-
-    const row = document.createElement('div');
-    row.className = 'row';
-
-    // Trade information
-    const infoCol = document.createElement('div');
-    infoCol.className = 'col-md-8';
-    infoCol.innerHTML = `
-        <div class="d-flex justify-content-between align-items-start">
-            <div>
-                <h6 class="mb-1">${trade.instrument}</h6>
-                <div class="text-muted small">
-                    ${new Date(trade.entry_datetime).toLocaleTimeString()} - 
-                    ${new Date(trade.exit_datetime).toLocaleTimeString()}
-                </div>
-            </div>
-            <span class="trade-status ${trade.status.toLowerCase()}">${trade.status}</span>
-        </div>
-        <div class="mt-2">
-            <div class="d-flex gap-3">
-                <div>
-                    <small class="text-muted">Entry</small>
-                    <div>${trade.entry_price}</div>
-                </div>
-                <div>
-                    <small class="text-muted">Exit</small>
-                    <div>${trade.exit_price}</div>
-                </div>
-                <div>
-                    <small class="text-muted">P/L</small>
-                    <div class="${trade.status === 'WIN' ? 'text-success' : trade.status === 'LOSS' ? 'text-danger' : 'text-warning'}">
-                        ${calculatePL(trade)}
+    data.days.forEach(day => {
+        html += `
+            <tr>
+                <td class="day-header">
+                    <div class="d-flex flex-column">
+                        <span class="weekday">${new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' })}</span>
+                        <span class="date">${new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                     </div>
-                </div>
-                <div>
-                    <small class="text-muted">R</small>
-                    <div class="trade-r ${getRClass(trade)}">${calculateR(trade)}</div>
-                </div>
-            </div>
+                </td>
+                <td>
+                    ${day.trades.length === 0 ?
+                '<div class="no-trades">No trades for this day</div>' :
+                '<div class="trades-list">' +
+                day.trades.map(trade => `
+                            <div class="trade-item" data-trade-id="${trade.id}">
+                                <div class="trade-item-main">
+                                    <div class="trade-time">${new Date(trade.entry_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                    <div class="trade-info" onclick="showTradeDetail(trades.find(t => t.id === ${trade.id}))">
+                                        <span class="trade-instrument">${trade.instrument}</span>
+                                        <span class="trade-type">${trade.order_type}</span>
+                                        <span class="trade-status ${trade.status.toLowerCase()}">${trade.status}</span>
+                                        <span class="trade-pl ${trade.net_profit > 0 ? 'text-success' : trade.net_profit < 0 ? 'text-danger' : ''}">
+                                            ${Number(trade.net_profit).toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="trade-actions">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="editTrade(${trade.id})">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteTrade(${trade.id})">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('') +
+                '</div>'
+            }
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
         </div>
     `;
 
-    // Trade actions
-    const actionsCol = document.createElement('div');
-    actionsCol.className = 'col-md-4';
-    actionsCol.innerHTML = `
-        <div class="trade-actions justify-content-end">
-            <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); editTrade(${trade.id})">
-                <i class="bi bi-pencil"></i>
-            </button>
-            <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); deleteTrade(${trade.id})">
-                <i class="bi bi-trash"></i>
-            </button>
-        </div>
-    `;
+    weeklyTradesContainer.innerHTML = html;
 
-    row.appendChild(infoCol);
-    row.appendChild(actionsCol);
-    cardBody.appendChild(row);
-    card.appendChild(cardBody);
-
-    return card;
+    // Add click event listeners to trade items for detail view
+    document.querySelectorAll('.trade-item .trade-info').forEach(item => {
+        item.addEventListener('click', () => {
+            const tradeId = parseInt(item.closest('.trade-item').dataset.tradeId);
+            const trade = trades.find(t => t.id === tradeId);
+            if (trade) {
+                showTradeDetail(trade);
+            } else {
+                console.error(`Trade with ID ${tradeId} not found in global list.`);
+            }
+        });
+    });
 }
 
 // Show trade detail
 function showTradeDetail(trade) {
-    const tradeDetail = document.getElementById('tradeDetail');
-    tradeDetail.style.display = 'block';
-
-    // Display entry images
-    const entryImages = document.getElementById('entryImages');
-    entryImages.innerHTML = '';
-    if (trade.entry_image) {
-        const imageDiv = document.createElement('div');
-        imageDiv.className = 'trade-image';
-        imageDiv.innerHTML = `
-            <img src="/uploads/${trade.entry_image}" alt="Entry setup">
-            <div class="trade-image-description">${trade.entry_image_description || ''}</div>
-        `;
-        entryImages.appendChild(imageDiv);
+    const detailView = document.getElementById('tradeDetail');
+    if (!detailView) {
+        console.error('Trade detail view element not found!');
+        return;
     }
 
-    // Display exit images
-    const exitImages = document.getElementById('exitImages');
-    exitImages.innerHTML = '';
-    if (trade.exit_image) {
-        const imageDiv = document.createElement('div');
-        imageDiv.className = 'trade-image';
-        imageDiv.innerHTML = `
-            <img src="/uploads/${trade.exit_image}" alt="Exit result">
-            <div class="trade-image-description">${trade.exit_image_description || ''}</div>
-        `;
-        exitImages.appendChild(imageDiv);
-    }
+    // Populate fields
+    document.getElementById('tradeInstrument').textContent = trade.instrument || 'N/A';
+    document.getElementById('tradeOrderType').textContent = trade.order_type || 'N/A';
+    document.getElementById('tradeEntryDateTime').textContent = trade.entry_datetime ? new Date(trade.entry_datetime).toLocaleString() : 'N/A';
+    document.getElementById('tradeExitDateTime').textContent = trade.exit_datetime ? new Date(trade.exit_datetime).toLocaleString() : 'N/A';
+    document.getElementById('tradeEntryPrice').textContent = trade.entry_price || 'N/A';
+    document.getElementById('tradeExitPrice').textContent = trade.exit_price || 'N/A';
+    document.getElementById('tradeStopLoss').textContent = trade.initial_stop_loss || 'N/A';
+    document.getElementById('tradeTakeProfit').textContent = trade.initial_take_profit || 'N/A';
+    document.getElementById('tradePositionSize').textContent = trade.position_size || 'N/A';
+    document.getElementById('tradeStatus').textContent = trade.status || 'N/A';
+    document.getElementById('tradeRationale').textContent = trade.rationale || 'No rationale provided.';
+    document.getElementById('tradeReview').textContent = trade.review || 'No review provided.';
+    document.getElementById('tradeEmotions').textContent = trade.emotions || 'No emotions recorded.';
+    document.getElementById('tradeTags').textContent = trade.tags || 'No tags.';
 
-    // Display trade information
-    const tradeInfo = document.getElementById('tradeInfo');
-    tradeInfo.innerHTML = `
-        <table class="trade-info-table">
-            <tr>
-                <th>Instrument</th>
-                <td>${trade.instrument}</td>
-            </tr>
-            <tr>
-                <th>Entry Date/Time</th>
-                <td>${new Date(trade.entry_datetime).toLocaleString()}</td>
-            </tr>
-            <tr>
-                <th>Exit Date/Time</th>
-                <td>${new Date(trade.exit_datetime).toLocaleString()}</td>
-            </tr>
-            <tr>
-                <th>Order Type</th>
-                <td>${trade.order_type}</td>
-            </tr>
-            <tr>
-                <th>Entry Price</th>
-                <td>${trade.entry_price}</td>
-            </tr>
-            <tr>
-                <th>Exit Price</th>
-                <td>${trade.exit_price}</td>
-            </tr>
-            <tr>
-                <th>Initial Stop Loss</th>
-                <td>${trade.initial_stop_loss}</td>
-            </tr>
-            <tr>
-                <th>Initial Take Profit</th>
-                <td>${trade.initial_take_profit}</td>
-            </tr>
-            <tr>
-                <th>Position Size</th>
-                <td>${trade.position_size}</td>
-            </tr>
-            <tr>
-                <th>Status</th>
-                <td><span class="trade-status ${trade.status.toLowerCase()}">${trade.status}</span></td>
-            </tr>
-            <tr>
-                <th>P/L</th>
-                <td class="${trade.status === 'WIN' ? 'text-success' : trade.status === 'LOSS' ? 'text-danger' : 'text-warning'}">
-                    ${calculatePL(trade)}
-                </td>
-            </tr>
-            <tr>
-                <th>R</th>
-                <td class="trade-r ${getRClass(trade)}">${calculateR(trade)}</td>
-            </tr>
-            <tr>
-                <th>Rationale</th>
-                <td>${trade.rationale || '-'}</td>
-            </tr>
-            <tr>
-                <th>Review</th>
-                <td>${trade.review || '-'}</td>
-            </tr>
-            <tr>
-                <th>Emotions</th>
-                <td>${trade.emotions || '-'}</td>
-            </tr>
-            <tr>
-                <th>Tags</th>
-                <td>
-                    <div class="trade-tags">
-                        ${(trade.tags || '').split(',').map(tag => `
-                            <span class="trade-tag">${tag.trim()}</span>
-                        `).join('')}
+    // Render images
+    const entryImagesDiv = document.getElementById('entryImages');
+    const exitImagesDiv = document.getElementById('exitImages');
+    entryImagesDiv.innerHTML = '';
+    exitImagesDiv.innerHTML = '';
+
+    if (trade.images && trade.images.length > 0) {
+        trade.images.forEach(img => {
+            const container = img.image_type === 'ENTRY' ? entryImagesDiv : exitImagesDiv;
+            if (container) {
+                container.innerHTML += `
+                    <div class="trade-image-item">
+                        <img src="/uploads/${img.image_path}" class="img-fluid" alt="Trade image">
+                        <p class="small text-muted mt-1">${img.description || ''}</p>
                     </div>
-                </td>
-            </tr>
-        </table>
-    `;
+                `;
+            }
+        });
+    }
 
-    // Scroll to trade detail
-    tradeDetail.scrollIntoView({ behavior: 'smooth' });
+    detailView.style.display = 'block';
+    detailView.scrollIntoView({ behavior: 'smooth' });
 }
 
 // Calculate P/L
 function calculatePL(trade) {
-    const multiplier = trade.order_type === 'BUY' ? 1 : -1;
-    const pl = (trade.exit_price - trade.entry_price) * trade.position_size * multiplier;
-    return pl.toFixed(2);
+    // This calculation is now based on net_profit from the server
+    return Number(trade.net_profit).toFixed(2);
 }
 
 // Calculate R
 function calculateR(trade) {
-    const multiplier = trade.order_type === 'BUY' ? 1 : -1;
-    const pl = (trade.exit_price - trade.entry_price) * trade.position_size * multiplier;
-    const risk = Math.abs(trade.entry_price - trade.initial_stop_loss) * trade.position_size;
-    return (pl / risk).toFixed(2);
+    // This calculation is now based on r_value from the server
+    return Number(trade.r_value).toFixed(2);
 }
 
 // Get R class for styling
@@ -314,28 +246,30 @@ async function deleteTrade(tradeId) {
 
     try {
         const response = await fetch(`/api/trades/${tradeId}`, {
-            method: 'DELETE',
-            headers: {
-                'Accept': 'application/json'
-            }
+            method: 'DELETE'
         });
 
-        const data = await response.json();
-
         if (response.ok) {
-            // Remove trade from the list
-            trades = trades.filter(t => t.id !== tradeId);
-            // Update UI
-            await loadWeeklyTrades();
-            await loadStatistics();
             // Hide trade detail if it's showing the deleted trade
             const tradeDetail = document.getElementById('tradeDetail');
             if (tradeDetail.style.display === 'block') {
-                tradeDetail.style.display = 'none';
+                // A bit of a hack: check if the detail view is for the deleted trade
+                const displayedInstrument = document.getElementById('tradeInstrument').textContent;
+                const deletedTrade = trades.find(t => t.id === tradeId);
+                if (deletedTrade && displayedInstrument === deletedTrade.instrument) {
+                    tradeDetail.style.display = 'none';
+                }
             }
+
             showAlert('Trade deleted successfully!', 'success');
+
+            // Reload data without full page refresh
+            await loadWeeklyTrades();
+            await loadStatistics();
+
         } else {
-            throw new Error(data.error || 'Failed to delete trade');
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to delete trade');
         }
     } catch (error) {
         console.error('Error deleting trade:', error);
@@ -346,17 +280,35 @@ async function deleteTrade(tradeId) {
 // Edit trade
 async function editTrade(tradeId) {
     const trade = trades.find(t => t.id === tradeId);
-    if (!trade) return;
+    if (!trade) {
+        showAlert('Could not find trade data to edit.', 'danger');
+        return;
+    }
 
-    // Populate form with trade data
-    Object.keys(trade).forEach(key => {
-        const input = addTradeForm.elements[key];
-        if (input) {
-            input.value = trade[key];
-        }
-    });
+    const form = document.getElementById('addTradeForm');
+    form.dataset.editId = trade.id;
 
-    // Show modal
+    // Populate form
+    document.querySelector('#addTradeModal .modal-title').textContent = `Edit Trade #${trade.id}`;
+    form.querySelector('[name="entry_datetime"]').value = trade.entry_datetime ? trade.entry_datetime.slice(0, 16) : '';
+    form.querySelector('[name="exit_datetime"]').value = trade.exit_datetime ? trade.exit_datetime.slice(0, 16) : '';
+    form.querySelector('[name="instrument"]').value = trade.instrument || '';
+    form.querySelector('[name="order_type"]').value = trade.order_type || 'BUY';
+    form.querySelector('[name="entry_price"]').value = trade.entry_price || '';
+    form.querySelector('[name="exit_price"]').value = trade.exit_price || '';
+    form.querySelector('[name="initial_stop_loss"]').value = trade.initial_stop_loss || '';
+    form.querySelector('[name="initial_take_profit"]').value = trade.initial_take_profit || '';
+    form.querySelector('[name="position_size"]').value = trade.position_size || '';
+    form.querySelector('[name="status"]').value = trade.status || 'WIN';
+    form.querySelector('[name="rationale"]').value = trade.rationale || '';
+    form.querySelector('[name="review"]').value = trade.review || '';
+    form.querySelector('[name="emotions"]').value = trade.emotions || '';
+    form.querySelector('[name="tags"]').value = trade.tags || '';
+
+    // Calculated fields
+    form.querySelector('[name="net_profit"]').value = trade.net_profit || '';
+    form.querySelector('[name="r_value"]').value = trade.r_value || '';
+
     const modal = new bootstrap.Modal(document.getElementById('addTradeModal'));
     modal.show();
 }
@@ -391,20 +343,33 @@ async function saveTrade() {
         tags: formData.get('tags')
     };
 
+    // If we are editing, add tradeId to URL and use PUT method
+    const tradeId = addTradeForm.dataset.editId;
+    let url = '/api/trades';
+    let fetchOptions = {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tradeData),
+    };
+
+    if (tradeId) {
+        fetchOptions.method = 'PUT';
+        url = `/api/trades/${tradeId}`;
+    }
+
     try {
-        // First, save the trade
-        const response = await fetch('/api/trades', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(tradeData),
-        });
+        // First, save the trade data
+        const response = await fetch(url, fetchOptions);
 
         if (response.ok) {
-            const newTrade = await response.json();
+            const savedTrade = await response.json();
 
-            // Upload entry image if exists
+            // Clear the editId from the form
+            delete addTradeForm.dataset.editId;
+
+            // Now handle image uploads
             const entryImage = formData.get('entry_image');
             if (entryImage && entryImage.size > 0) {
                 const entryImageData = new FormData();
@@ -412,13 +377,12 @@ async function saveTrade() {
                 entryImageData.append('image_type', 'ENTRY');
                 entryImageData.append('description', formData.get('entry_image_description'));
 
-                await fetch(`/api/trades/${newTrade.id}/images`, {
+                await fetch(`/api/trades/${savedTrade.id}/images`, {
                     method: 'POST',
                     body: entryImageData
                 });
             }
 
-            // Upload exit image if exists
             const exitImage = formData.get('exit_image');
             if (exitImage && exitImage.size > 0) {
                 const exitImageData = new FormData();
@@ -426,26 +390,27 @@ async function saveTrade() {
                 exitImageData.append('image_type', 'EXIT');
                 exitImageData.append('description', formData.get('exit_image_description'));
 
-                await fetch(`/api/trades/${newTrade.id}/images`, {
+                await fetch(`/api/trades/${savedTrade.id}/images`, {
                     method: 'POST',
                     body: exitImageData
                 });
             }
 
-            // Add new trade to the trades array
-            trades.unshift(newTrade);
+            showAlert('Trade saved successfully!', 'success');
 
-            // Reload weekly trades to show the new trade
+            // Reload data to show changes
             await loadWeeklyTrades();
-
-            // Update statistics
             await loadStatistics();
 
-            // Close modal and show success message
-            closeModal('addTradeModal');
-            showAlert('Trade saved successfully!', 'success');
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addTradeModal'));
+            if (modal) {
+                modal.hide();
+            }
+
         } else {
-            throw new Error('Failed to save trade');
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to save trade');
         }
     } catch (error) {
         console.error('Error saving trade:', error);
@@ -489,100 +454,12 @@ function closeModal(modalId) {
     addTradeForm.reset();
 }
 
-// Display weekly trades
-function displayWeeklyTrades(data) {
-    const weeklyTrades = document.getElementById('weeklyTrades');
-    const weekRange = document.getElementById('weekRange');
-
-    // Update week range display
-    weekRange.textContent = `${formatDate(data.week_start)} - ${formatDate(data.week_end)}`;
-
-    // Create weekly view
-    let html = `
-        <div class="table-responsive">
-            <table class="table table-bordered weekly-trades-table">
-                <thead>
-                    <tr>
-                        <th style="width: 150px;">Date</th>
-                        <th>Trades</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-
-    data.days.forEach(day => {
-        html += `
-            <tr>
-                <td class="day-header">
-                    <div class="d-flex flex-column">
-                        <span class="weekday">${new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' })}</span>
-                        <span class="date">${new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                    </div>
-                </td>
-                <td>
-                    ${day.trades.length === 0 ?
-                '<div class="no-trades">No trades for this day</div>' :
-                '<div class="trades-list">' +
-                day.trades.map(trade => `
-                            <div class="trade-item" data-trade-id="${trade.id}">
-                                <div class="trade-time">${new Date(trade.entry_datetime).toLocaleTimeString()}</div>
-                                <div class="trade-info">
-                                    <span class="trade-instrument">${trade.instrument}</span>
-                                    <span class="trade-type">${trade.order_type}</span>
-                                    <span class="trade-status ${trade.status.toLowerCase()}">${trade.status}</span>
-                                    <span class="trade-pl ${trade.status === 'WIN' ? 'text-success' : trade.status === 'LOSS' ? 'text-danger' : 'text-warning'}">
-                                        ${calculatePL(trade)}
-                                    </span>
-                                </div>
-                            </div>
-                        `).join('') +
-                '</div>'
-            }
-                </td>
-            </tr>
-        `;
-    });
-
-    html += `
-                </tbody>
-            </table>
-        </div>
-    `;
-
-    weeklyTrades.innerHTML = html;
-
-    // Add click event listeners to trade items
-    document.querySelectorAll('.trade-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const tradeId = parseInt(item.dataset.tradeId);
-            const trade = trades.find(t => t.id === tradeId);
-            if (trade) {
-                showTradeDetail(trade);
-            }
-        });
-    });
-}
-
 // Format date for display
 function formatDate(dateStr) {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', {
         weekday: 'short',
-        year: 'numeric',
         month: 'short',
         day: 'numeric'
     });
-}
-
-// Event listeners for week navigation
-document.getElementById('prevWeek').addEventListener('click', () => {
-    currentWeekOffset++;
-    loadWeeklyTrades();
-});
-
-document.getElementById('nextWeek').addEventListener('click', () => {
-    if (currentWeekOffset > 0) {
-        currentWeekOffset--;
-        loadWeeklyTrades();
-    }
-}); 
+} 

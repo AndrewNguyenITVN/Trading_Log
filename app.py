@@ -100,9 +100,9 @@ def get_trade(trade_id):
 def update_trade(trade_id):
     try:
         trade = Trade.query.get_or_404(trade_id)
-        data = request.form.to_dict()
+        data = request.get_json()
         
-        # Update trade fields
+        # Update trade fields from JSON data
         trade.entry_datetime = datetime.fromisoformat(data['entry_datetime'])
         trade.exit_datetime = datetime.fromisoformat(data['exit_datetime'])
         trade.instrument = data['instrument']
@@ -120,14 +120,10 @@ def update_trade(trade_id):
         trade.emotions = data['emotions']
         trade.tags = data['tags']
         trade.updated_at = datetime.utcnow()
+        
+        # Note: Image uploads are handled separately via POST to /api/trades/<id>/images
+        # This keeps the PUT request clean for JSON data.
 
-        # Handle image uploads for update
-        if 'entry_image' in request.files and request.files['entry_image'].filename != '':
-            upload_image_for_trade(request.files['entry_image'], trade.id, 'ENTRY', data.get('entry_image_description'))
-        
-        if 'exit_image' in request.files and request.files['exit_image'].filename != '':
-            upload_image_for_trade(request.files['exit_image'], trade.id, 'EXIT', data.get('exit_image_description'))
-        
         db.session.commit()
         return jsonify(trade.to_dict())
     except Exception as e:
@@ -178,25 +174,37 @@ def upload_trade_image(trade_id):
         return jsonify({'error': 'No selected file'}), 400
     
     if file and allowed_file(file.filename):
-        # Generate unique filename
+        image_type = request.form.get('image_type', 'ENTRY')
+        description = request.form.get('description', '')
+
+        # Find and delete the old image of the same type, if it exists
+        old_image = TradeImage.query.filter_by(trade_id=trade_id, image_type=image_type).first()
+        if old_image:
+            try:
+                old_image_path = os.path.join(app.config['UPLOAD_FOLDER'], old_image.image_path)
+                if os.path.exists(old_image_path):
+                    os.remove(old_image_path)
+            except Exception as e:
+                app.logger.error(f"Error deleting old image file {old_image.image_path}: {e}")
+            db.session.delete(old_image)
+
+        # Save the new image
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4()}_{filename}"
-        
-        # Save file
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         file.save(file_path)
         
-        # Create database record
-        image = TradeImage(
+        # Create a new database record for the new image
+        new_image = TradeImage(
             trade_id=trade_id,
             image_path=unique_filename,
-            image_type=request.form.get('image_type', 'ENTRY'),
-            description=request.form.get('description', '')
+            image_type=image_type,
+            description=description
         )
-        db.session.add(image)
+        db.session.add(new_image)
         db.session.commit()
         
-        return jsonify(image.to_dict()), 201
+        return jsonify(new_image.to_dict()), 201
     
     return jsonify({'error': 'Invalid file type'}), 400
 
@@ -229,40 +237,39 @@ def get_statistics():
 def get_weekly_trades():
     week_offset = request.args.get('week_offset', default=0, type=int)
     
-    # Calculate the start and end of the week
     today = datetime.now()
-    start_of_week = today - timedelta(days=today.weekday() + (week_offset * 7))
+    # Assuming Monday is the first day of the week
+    start_of_current_week = today - timedelta(days=today.weekday())
+    
+    # Calculate start and end of the target week
+    start_of_week = start_of_current_week - timedelta(weeks=week_offset)
     end_of_week = start_of_week + timedelta(days=6)
     
-    # Get trades for the week
+    # Get trades for the calculated week
     trades = Trade.query.filter(
-        Trade.entry_datetime >= start_of_week,
-        Trade.entry_datetime <= end_of_week
+        Trade.entry_datetime >= start_of_week.replace(hour=0, minute=0, second=0),
+        Trade.entry_datetime <= end_of_week.replace(hour=23, minute=59, second=59)
     ).order_by(Trade.entry_datetime).all()
     
-    # Group trades by day
+    # Group trades by day for the entire week
     trades_by_day = {}
-    for trade in trades:
-        day = trade.entry_datetime.strftime('%Y-%m-%d')
-        if day not in trades_by_day:
-            trades_by_day[day] = []
-        trades_by_day[day].append(trade.to_dict())
-    
-    # Create a list of all days in the week
-    week_days = []
-    current_day = start_of_week
-    while current_day <= end_of_week:
+    for i in range(7):
+        current_day = start_of_week + timedelta(days=i)
         day_str = current_day.strftime('%Y-%m-%d')
-        week_days.append({
-            'date': day_str,
-            'trades': trades_by_day.get(day_str, [])
-        })
-        current_day += timedelta(days=1)
+        trades_by_day[day_str] = {
+            "date": current_day.isoformat(),
+            "trades": []
+        }
     
+    for trade in trades:
+        day_str = trade.entry_datetime.strftime('%Y-%m-%d')
+        if day_str in trades_by_day:
+            trades_by_day[day_str]['trades'].append(trade.to_dict())
+            
     return jsonify({
-        'week_start': start_of_week.strftime('%Y-%m-%d'),
-        'week_end': end_of_week.strftime('%Y-%m-%d'),
-        'days': week_days
+        "week_start": start_of_week.isoformat(),
+        "week_end": end_of_week.isoformat(),
+        "days": list(trades_by_day.values())
     })
 
 if __name__ == '__main__':
