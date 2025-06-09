@@ -56,6 +56,19 @@ def get_trades():
 def create_trade():
     try:
         data = request.form.to_dict()
+        
+        # Enforce required fields based on user specification
+        required_fields = [
+            'entry_datetime', 'exit_datetime', 'instrument', 'order_type', 
+            'entry_price', 'exit_price', 'initial_stop_loss', 
+            'initial_take_profit', 'position_size', 'status'
+        ]
+        
+        missing_or_empty_fields = [field for field in required_fields if not data.get(field)]
+        if missing_or_empty_fields:
+            error_message = f'Missing or empty required fields: {", ".join(missing_or_empty_fields)}'
+            return jsonify({'error': error_message}), 400
+
         trade = Trade(
             entry_datetime=datetime.fromisoformat(data['entry_datetime']),
             exit_datetime=datetime.fromisoformat(data['exit_datetime']),
@@ -67,12 +80,12 @@ def create_trade():
             initial_take_profit=float(data['initial_take_profit']),
             position_size=float(data['position_size']),
             status=data['status'],
-            net_profit=float(data['net_profit']),
-            r_value=float(data['r_value']),
-            rationale=data['rationale'],
-            review=data['review'],
-            emotions=data['emotions'],
-            tags=data['tags']
+            net_profit=float(data.get('net_profit') or 0),
+            r_value=float(data.get('r_value') or 0),
+            rationale=data.get('rationale', ''),
+            review=data.get('review', ''),
+            emotions=data.get('emotions', ''),
+            tags=data.get('tags', '')
         )
         db.session.add(trade)
         db.session.flush()  # Flush to get the trade.id for image association
@@ -89,12 +102,55 @@ def create_trade():
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error creating trade: {e}")
-        return jsonify({'error': str(e)}), 500
+        # Provide a more specific error message if possible
+        if 'invalid isoformat' in str(e):
+            return jsonify({'error': 'Invalid date format. Please use YYYY-MM-DDTHH:MM.'}), 400
+        return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
 
 @app.route('/api/trades/<int:trade_id>', methods=['GET'])
 def get_trade(trade_id):
     trade = Trade.query.get_or_404(trade_id)
     return jsonify(trade.to_dict())
+
+@app.route('/api/trades/update/<int:trade_id>', methods=['POST'])
+def update_trade_form(trade_id):
+    try:
+        trade = Trade.query.get_or_404(trade_id)
+        data = request.form.to_dict()
+        
+        # Update trade fields from form data
+        trade.entry_datetime = datetime.fromisoformat(data.get('entry_datetime')) if data.get('entry_datetime') else trade.entry_datetime
+        trade.exit_datetime = datetime.fromisoformat(data.get('exit_datetime')) if data.get('exit_datetime') else trade.exit_datetime
+        trade.instrument = data.get('instrument', trade.instrument)
+        trade.order_type = data.get('order_type', trade.order_type)
+        trade.entry_price = float(data.get('entry_price', trade.entry_price))
+        trade.exit_price = float(data.get('exit_price', trade.exit_price))
+        trade.initial_stop_loss = float(data.get('initial_stop_loss') or trade.initial_stop_loss)
+        trade.initial_take_profit = float(data.get('initial_take_profit') or trade.initial_take_profit)
+        trade.position_size = float(data.get('position_size') or trade.position_size)
+        trade.status = data.get('status', trade.status)
+        trade.net_profit = float(data.get('net_profit') or trade.net_profit)
+        trade.r_value = float(data.get('r_value') or trade.r_value)
+        trade.rationale = data.get('rationale', trade.rationale)
+        trade.review = data.get('review', trade.review)
+        trade.emotions = data.get('emotions', trade.emotions)
+        trade.tags = data.get('tags', trade.tags)
+        trade.updated_at = datetime.utcnow()
+        
+        # Handle image uploads - re-upload replaces old ones
+        if 'entry_image' in request.files and request.files['entry_image'].filename != '':
+             upload_image_for_trade(request.files['entry_image'], trade.id, 'ENTRY', data.get('entry_image_description'), overwrite=True)
+        if 'exit_image' in request.files and request.files['exit_image'].filename != '':
+             upload_image_for_trade(request.files['exit_image'], trade.id, 'EXIT', data.get('exit_image_description'), overwrite=True)
+
+        db.session.commit()
+        return jsonify(trade.to_dict())
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating trade {trade_id}: {e}")
+        if 'invalid isoformat' in str(e):
+            return jsonify({'error': 'Invalid date format for update. Please use YYYY-MM-DDTHH:MM.'}), 400
+        return jsonify({'error': f'An unexpected error occurred during update: {e}'}), 500
 
 @app.route('/api/trades/<int:trade_id>', methods=['PUT'])
 def update_trade(trade_id):
@@ -149,8 +205,20 @@ def delete_trade(trade_id):
     db.session.commit()
     return '', 204
 
-def upload_image_for_trade(file, trade_id, image_type, description):
+def upload_image_for_trade(file, trade_id, image_type, description, overwrite=False):
     if file and allowed_file(file.filename):
+        # If overwriting, delete the old image of the same type
+        if overwrite:
+            old_image = TradeImage.query.filter_by(trade_id=trade_id, image_type=image_type).first()
+            if old_image:
+                try:
+                    old_image_path = os.path.join(app.config['UPLOAD_FOLDER'], old_image.image_path)
+                    if os.path.exists(old_image_path):
+                        os.remove(old_image_path)
+                except Exception as e:
+                    app.logger.error(f"Error deleting old image file {old_image.image_path}: {e}")
+                db.session.delete(old_image)
+
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4()}_{filename}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)

@@ -25,20 +25,75 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupEventListeners() {
     saveTradeButton.addEventListener('click', saveTrade);
 
-    // Week navigation
-    document.getElementById('prevWeek').addEventListener('click', () => {
+    // --- Start of Week Navigation Logic ---
+    const prevWeekBtn = document.getElementById('prevWeek');
+    const nextWeekBtn = document.getElementById('nextWeek');
+    const todayWeekBtn = document.getElementById('todayWeek');
+
+    prevWeekBtn.addEventListener('click', () => {
         currentWeekOffset++;
         loadWeeklyTrades();
     });
 
-    document.getElementById('nextWeek').addEventListener('click', () => {
-        currentWeekOffset--;
-        loadWeeklyTrades();
+    nextWeekBtn.addEventListener('click', () => {
+        if (currentWeekOffset > 0) {
+            currentWeekOffset--;
+            loadWeeklyTrades();
+        }
     });
 
-    document.getElementById('todayWeek').addEventListener('click', () => {
-        currentWeekOffset = 0;
-        loadWeeklyTrades();
+    const calendar = flatpickr(todayWeekBtn, {
+        inline: false, // Show as a dropdown
+        onChange: function (selectedDates, dateStr, instance) {
+            const selectedDate = selectedDates[0];
+
+            // Helper to get the start of the week (Monday) for a given date
+            const getStartOfWeek = (date) => {
+                const d = new Date(date);
+                // Adjust for week starting on Monday
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+                const monday = new Date(d.setDate(diff));
+                monday.setHours(0, 0, 0, 0);
+                return monday;
+            };
+
+            const startOfCurrentWeek = getStartOfWeek(new Date());
+            const startOfSelectedWeek = getStartOfWeek(selectedDate);
+
+            // Calculate the difference in milliseconds
+            const diffTime = startOfCurrentWeek.getTime() - startOfSelectedWeek.getTime();
+
+            // Calculate the difference in weeks and round it to the nearest whole number
+            const diffWeeks = Math.round(diffTime / (1000 * 60 * 60 * 24 * 7));
+
+            currentWeekOffset = diffWeeks;
+            loadWeeklyTrades();
+        }
+    });
+
+    todayWeekBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        calendar.open();
+    });
+    // --- End of Week Navigation Logic ---
+
+    // --- Net Profit Calculation Logic ---
+    const tradeForm = document.getElementById('addTradeForm');
+    const fieldsForCalculation = ['entry_price', 'exit_price', 'position_size', 'order_type'];
+    fieldsForCalculation.forEach(fieldName => {
+        const input = tradeForm.querySelector(`[name="${fieldName}"]`);
+        if (input) {
+            input.addEventListener('input', calculateNetProfit);
+        }
+    });
+
+    // --- Modal Reset Logic ---
+    const addTradeModalEl = document.getElementById('addTradeModal');
+    addTradeModalEl.addEventListener('hidden.bs.modal', () => {
+        tradeForm.reset();
+        delete tradeForm.dataset.editId;
+        document.querySelector('#addTradeModal .modal-title').textContent = 'Add New Trade';
     });
 
     // Close trade detail view
@@ -75,6 +130,10 @@ async function loadWeeklyTrades() {
         trades = data.days.flatMap(day => day.trades);
 
         displayWeeklyTrades(data);
+
+        // Disable next week button if viewing current week or future
+        document.getElementById('nextWeek').disabled = currentWeekOffset <= 0;
+
     } catch (error) {
         console.error('Error loading weekly trades:', error);
         showAlert('Error loading trades. Please try again.', 'danger');
@@ -323,90 +382,44 @@ function updateDashboard() {
 
 // Save trade
 async function saveTrade() {
-    const formData = new FormData(addTradeForm);
-    const tradeData = {
-        entry_datetime: formData.get('entry_datetime'),
-        exit_datetime: formData.get('exit_datetime'),
-        instrument: formData.get('instrument'),
-        order_type: formData.get('order_type'),
-        entry_price: parseFloat(formData.get('entry_price')),
-        exit_price: parseFloat(formData.get('exit_price')),
-        initial_stop_loss: parseFloat(formData.get('initial_stop_loss')),
-        initial_take_profit: parseFloat(formData.get('initial_take_profit')),
-        position_size: parseFloat(formData.get('position_size')),
-        status: formData.get('status'),
-        net_profit: parseFloat(formData.get('net_profit')),
-        r_value: parseFloat(formData.get('r_value')),
-        rationale: formData.get('rationale'),
-        review: formData.get('review'),
-        emotions: formData.get('emotions'),
-        tags: formData.get('tags')
-    };
+    const saveButton = document.getElementById('saveTrade');
+    saveButton.disabled = true;
 
-    // If we are editing, add tradeId to URL and use PUT method
+    const formData = new FormData(addTradeForm);
     const tradeId = addTradeForm.dataset.editId;
+
     let url = '/api/trades';
-    let fetchOptions = {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(tradeData),
-    };
 
     if (tradeId) {
-        fetchOptions.method = 'PUT';
-        url = `/api/trades/${tradeId}`;
+        url = `/api/trades/update/${tradeId}`;
     }
 
     try {
-        // First, save the trade data
-        const response = await fetch(url, fetchOptions);
+        const response = await fetch(url, {
+            method: 'POST', // Always POST to handle FormData
+            body: formData,
+        });
 
         if (response.ok) {
-            const savedTrade = await response.json();
-
-            // Clear the editId from the form
-            delete addTradeForm.dataset.editId;
-
-            // Now handle image uploads
-            const entryImage = formData.get('entry_image');
-            if (entryImage && entryImage.size > 0) {
-                const entryImageData = new FormData();
-                entryImageData.append('image', entryImage);
-                entryImageData.append('image_type', 'ENTRY');
-                entryImageData.append('description', formData.get('entry_image_description'));
-
-                await fetch(`/api/trades/${savedTrade.id}/images`, {
-                    method: 'POST',
-                    body: entryImageData
-                });
-            }
-
-            const exitImage = formData.get('exit_image');
-            if (exitImage && exitImage.size > 0) {
-                const exitImageData = new FormData();
-                exitImageData.append('image', exitImage);
-                exitImageData.append('image_type', 'EXIT');
-                exitImageData.append('description', formData.get('exit_image_description'));
-
-                await fetch(`/api/trades/${savedTrade.id}/images`, {
-                    method: 'POST',
-                    body: exitImageData
-                });
-            }
-
             showAlert('Trade saved successfully!', 'success');
 
-            // Reload data to show changes
-            await loadWeeklyTrades();
-            await loadStatistics();
+            // Manually blur the active element (the save button) to remove focus.
+            // This resolves the aria-hidden accessibility warning.
+            if (document.activeElement) {
+                document.activeElement.blur();
+            }
 
-            // Close modal
             const modal = bootstrap.Modal.getInstance(document.getElementById('addTradeModal'));
             if (modal) {
                 modal.hide();
             }
+
+            addTradeForm.reset();
+            delete addTradeForm.dataset.editId;
+            document.querySelector('#addTradeModal .modal-title').textContent = 'Add New Trade';
+
+            await loadWeeklyTrades();
+            await loadStatistics();
 
         } else {
             const errorData = await response.json();
@@ -415,6 +428,9 @@ async function saveTrade() {
     } catch (error) {
         console.error('Error saving trade:', error);
         showAlert(error.message || 'Error saving trade. Please try again.', 'danger');
+    } finally {
+        // Re-enable the button whether the save succeeded or failed
+        saveButton.disabled = false;
     }
 }
 
@@ -462,4 +478,50 @@ function formatDate(dateStr) {
         month: 'short',
         day: 'numeric'
     });
+}
+
+function calculateNetProfit() {
+    const form = document.getElementById('addTradeForm');
+    const entryPriceInput = form.querySelector('[name="entry_price"]');
+    const entryPrice = parseFloat(entryPriceInput.value);
+    const exitPrice = parseFloat(form.querySelector('[name="exit_price"]').value);
+    const positionSize = parseFloat(form.querySelector('[name="position_size"]').value);
+    const orderType = form.querySelector('[name="order_type"]').value;
+    const netProfitInput = form.querySelector('[name="net_profit"]');
+
+    if (isNaN(entryPrice) || isNaN(exitPrice) || isNaN(positionSize) || !orderType || !entryPriceInput.value) {
+        netProfitInput.value = '';
+        return;
+    }
+
+    // Dynamically determine pip size by inspecting the entry price's decimal places.
+    const getPipSize = (priceString) => {
+        if (priceString.includes('.')) {
+            const decimalPlaces = priceString.split('.')[1].length;
+            // Instruments like JPY pairs typically have 2 or 3 decimal places.
+            if (decimalPlaces <= 3) {
+                return 0.01;
+            }
+        }
+        // Most other pairs have 4 or 5 decimal places (the 5th being a pipette).
+        return 0.0001;
+    };
+
+    const pipSize = getPipSize(entryPriceInput.value);
+
+    // The value of 1 pip for 1 standard lot (100,000 units) for a USD-quoted pair.
+    const pipValuePerStandardLot = 10;
+
+    // Calculate the difference in pips
+    let pips = 0;
+    if (orderType.toUpperCase() === 'BUY') {
+        pips = (exitPrice - entryPrice) / pipSize;
+    } else if (orderType.toUpperCase() === 'SELL') {
+        pips = (entryPrice - exitPrice) / pipSize;
+    }
+
+    // Calculate net profit using the standard formula
+    const profit = pips * pipValuePerStandardLot * positionSize;
+
+    netProfitInput.value = profit.toFixed(2);
 } 
