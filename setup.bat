@@ -11,3 +11,6 @@ pip install -r requirements.txt
 echo Setup complete!
 echo To start the application, run: python app.py
 pause 
+
+
+script build python: build.py

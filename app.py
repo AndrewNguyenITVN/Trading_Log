@@ -5,14 +5,22 @@ from datetime import datetime, timedelta
 import json
 from werkzeug.utils import secure_filename
 import uuid
+import webview
+import threading
 
 app = Flask(__name__)
 CORS(app)
 
-# Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///D:/myproject/Trading/data/trading_journal.db'
+# --- Configuration for Portability ---
+# Use the instance folder for all user-generated data (database, uploads).
+# This is the standard Flask way and makes the app portable.
+instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+os.makedirs(instance_path, exist_ok=True)
+
+app.config['INSTANCE_PATH'] = instance_path
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(instance_path, 'trading_journal.db')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'data/images'
+app.config['UPLOAD_FOLDER'] = os.path.join(instance_path, 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
@@ -370,4 +378,15 @@ def get_weekly_trades():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True) 
+    # The `run_app` function will be the target for our thread
+    def run_app():
+        app.run(host='127.0.0.1', port=5000)
+
+    # We start the Flask server in a separate thread, so it doesn't block the GUI
+    server_thread = threading.Thread(target=run_app)
+    server_thread.daemon = True
+    server_thread.start()
+
+    # Create and start the pywebview window
+    webview.create_window('Trading Journal', 'http://127.0.0.1:5000', width=1280, height=800)
+    webview.start() 
