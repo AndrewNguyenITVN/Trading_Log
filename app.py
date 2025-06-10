@@ -292,13 +292,42 @@ def uploaded_file(filename):
 @app.route('/api/statistics', methods=['GET'])
 def get_statistics():
     trades = Trade.query.all()
-    # Calculate statistics using pandas
-    # This is a placeholder - implement actual statistics calculation
+    total_trades = len(trades)
+
+    if not trades:
+        return jsonify({
+            'total_trades': 0,
+            'win_rate': 0,
+            'profit_factor': 0,
+            'expectancy': 0
+        })
+
+    # Base calculations on objective net_profit, not user-selected status
+    winning_trades = [t for t in trades if t.net_profit > 0]
+    losing_trades = [t for t in trades if t.net_profit < 0]
+
+    win_count = len(winning_trades)
+    loss_count = len(losing_trades)
+    
+    # Win Rate is based on all trades taken
+    win_rate = win_count / total_trades if total_trades > 0 else 0
+    loss_rate = loss_count / total_trades if total_trades > 0 else 0
+
+    gross_profit = sum(t.net_profit for t in winning_trades)
+    gross_loss = abs(sum(t.net_profit for t in losing_trades))
+    
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0
+
+    avg_win = gross_profit / win_count if win_count > 0 else 0
+    avg_loss = gross_loss / loss_count if loss_count > 0 else 0
+    
+    expectancy = (win_rate * avg_win) - (loss_rate * avg_loss)
+
     return jsonify({
-        'total_trades': len(trades),
-        'win_rate': 0,
-        'profit_factor': 0,
-        'expectancy': 0
+        'total_trades': total_trades,
+        'win_rate': win_rate,
+        'profit_factor': profit_factor,
+        'expectancy': expectancy
     })
 
 @app.route('/api/trades/weekly', methods=['GET'])
