@@ -377,6 +377,110 @@ def get_weekly_trades():
         "days": list(trades_by_day.values())
     })
 
+@app.route('/advanced-analysis')
+def advanced_analysis():
+    return render_template('advanced_analysis.html')
+
+@app.route('/api/advanced-analysis')
+def get_advanced_analysis():
+    # Get all trades from database
+    trades = get_all_trades()
+    
+    if not trades:
+        return jsonify({
+            'metrics': {
+                'winRate': 0,
+                'riskReward': 0,
+                'avgWinLoss': 0,
+                'profitFactor': 0
+            },
+            'charts': {
+                'equityCurve': {'labels': [], 'data': []},
+                'winLossDistribution': {'wins': 0, 'losses': 0},
+                'monthlyPerformance': {'labels': [], 'data': []},
+                'drawdownAnalysis': {'labels': [], 'data': []}
+            }
+        })
+
+    # Calculate metrics
+    total_trades = len(trades)
+    winning_trades = sum(1 for trade in trades if trade['profit'] > 0)
+    losing_trades = sum(1 for trade in trades if trade['profit'] < 0)
+    
+    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+    
+    total_profit = sum(trade['profit'] for trade in trades if trade['profit'] > 0)
+    total_loss = abs(sum(trade['profit'] for trade in trades if trade['profit'] < 0))
+    
+    avg_win = total_profit / winning_trades if winning_trades > 0 else 0
+    avg_loss = total_loss / losing_trades if losing_trades > 0 else 0
+    
+    risk_reward = avg_win / avg_loss if avg_loss != 0 else 0
+    profit_factor = total_profit / total_loss if total_loss != 0 else 0
+
+    # Prepare equity curve data
+    equity_curve = []
+    current_equity = 0
+    dates = []
+    
+    for trade in sorted(trades, key=lambda x: x['date']):
+        current_equity += trade['profit']
+        equity_curve.append(current_equity)
+        dates.append(trade['date'].strftime('%Y-%m-%d'))
+
+    # Calculate drawdown
+    drawdown = []
+    peak = 0
+    for equity in equity_curve:
+        if equity > peak:
+            peak = equity
+        drawdown_pct = ((peak - equity) / peak * 100) if peak > 0 else 0
+        drawdown.append(drawdown_pct)
+
+    # Calculate monthly performance
+    monthly_performance = {}
+    for trade in trades:
+        month_key = trade['date'].strftime('%Y-%m')
+        if month_key not in monthly_performance:
+            monthly_performance[month_key] = 0
+        monthly_performance[month_key] += trade['profit']
+
+    monthly_labels = sorted(monthly_performance.keys())
+    monthly_data = [monthly_performance[month] for month in monthly_labels]
+
+    return jsonify({
+        'metrics': {
+            'winRate': round(win_rate, 2),
+            'riskReward': round(risk_reward, 2),
+            'avgWinLoss': round(avg_win / avg_loss if avg_loss != 0 else 0, 2),
+            'profitFactor': round(profit_factor, 2)
+        },
+        'charts': {
+            'equityCurve': {
+                'labels': dates,
+                'data': equity_curve
+            },
+            'winLossDistribution': {
+                'wins': winning_trades,
+                'losses': losing_trades
+            },
+            'monthlyPerformance': {
+                'labels': monthly_labels,
+                'data': monthly_data
+            },
+            'drawdownAnalysis': {
+                'labels': dates,
+                'data': drawdown
+            }
+        }
+    })
+
+def get_all_trades():
+    conn = get_db_connection()
+    trades = conn.execute('SELECT * FROM trades ORDER BY date').fetchall()
+    conn.close()
+    return [dict(trade) for trade in trades]
+
 if __name__ == '__main__':
     # The `run_app` function will be the target for our thread
     def run_app():
@@ -389,4 +493,4 @@ if __name__ == '__main__':
 
     # Create and start the pywebview window
     webview.create_window('Trading Journal', 'http://127.0.0.1:5000', width=1280, height=800)
-    webview.start() 
+    webview.start()
