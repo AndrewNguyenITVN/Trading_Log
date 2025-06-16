@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 import uuid
 import webview
 import threading
+from collections import defaultdict
 
 app = Flask(__name__)
 CORS(app)
@@ -378,113 +379,135 @@ def get_weekly_trades():
     })
 
 @app.route('/advanced-analysis')
-def advanced_analysis():
+def advanced_analysis_page():
+    """Renders the advanced analysis page."""
     return render_template('advanced_analysis.html')
 
 @app.route('/api/advanced-analysis')
-def get_advanced_analysis():
-    # Get all trades from database
-    trades = get_all_trades()
-    
-    if not trades:
+def get_advanced_analysis_data():
+    """Provides the data for the advanced analysis page."""
+    try:
+        trades = Trade.query.order_by(Trade.entry_datetime.asc()).all()
+
+        if not trades:
+            # Return a default empty structure if no trades exist
+            return jsonify({
+                'metrics': {'winRate': 0, 'riskReward': 0, 'avgWinLoss': 0, 'profitFactor': 0, 'tradeCount': 0, 'avgDuration': 'N/A', 'maxWinStreak': 0, 'maxLossStreak': 0, 'kellyCriterion': 0, 'expectancy': 0},
+                'charts': {'equityCurve': {'labels': [], 'data': []}, 'winLossDistribution': {'wins': 0, 'losses': 0}, 'monthlyPerformance': {'labels': [], 'data': []}, 'drawdownAnalysis': {'labels': [], 'data': []}, 'rMultipleDistribution': {'labels': [], 'data': []}}
+            })
+
+        # --- METRICS CALCULATION ---
+        winning_trades = [t for t in trades if t.net_profit > 0]
+        losing_trades = [t for t in trades if t.net_profit < 0]
+
+        total_trades = len(trades)
+        win_count = len(winning_trades)
+        loss_count = len(losing_trades)
+        
+        win_rate = (win_count / total_trades * 100) if total_trades > 0 else 0
+        loss_rate = 100 - win_rate
+        
+        gross_profit = sum(t.net_profit for t in winning_trades)
+        gross_loss = abs(sum(t.net_profit for t in losing_trades))
+        
+        avg_win = gross_profit / win_count if win_count > 0 else 0
+        avg_loss = gross_loss / loss_count if loss_count > 0 else 0
+        
+        risk_reward_ratio = avg_win / avg_loss if avg_loss > 0 else 0
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0
+        expectancy = (win_rate / 100 * avg_win) - (loss_rate / 100 * avg_loss)
+
+        # --- NEW METRICS CALCULATION ---
+        total_duration_seconds = sum((t.exit_datetime - t.entry_datetime).total_seconds() for t in trades)
+        avg_duration_seconds = total_duration_seconds / total_trades if total_trades > 0 else 0
+        days, remainder = divmod(avg_duration_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, _ = divmod(remainder, 60)
+        avg_duration_str = f"{int(days)}d {int(hours)}h {int(minutes)}m"
+
+        max_win_streak, current_win_streak = 0, 0
+        max_loss_streak, current_loss_streak = 0, 0
+        for t in trades:
+            if t.net_profit > 0:
+                current_win_streak += 1
+                current_loss_streak = 0
+            elif t.net_profit < 0:
+                current_loss_streak += 1
+                current_win_streak = 0
+            else:
+                current_win_streak = 0
+                current_loss_streak = 0
+            max_win_streak = max(max_win_streak, current_win_streak)
+            max_loss_streak = max(max_loss_streak, current_loss_streak)
+
+        kelly_criterion = (win_rate / 100) - ((loss_rate / 100) / risk_reward_ratio) if risk_reward_ratio > 0 else 0
+        
+        # --- CHARTS DATA PREPARATION ---
+        dates, equity_curve, drawdown_data = [], [], []
+        current_equity, peak_equity = 0, 0
+        r_multiples = []
+        monthly_performance = defaultdict(float)
+
+        for trade in trades:
+            # Equity, Drawdown, Dates
+            current_equity += trade.net_profit
+            equity_curve.append(current_equity)
+            if current_equity > peak_equity:
+                peak_equity = current_equity
+            drawdown = ((peak_equity - current_equity) / peak_equity * 100) if peak_equity > 0 else 0
+            drawdown_data.append(drawdown)
+            dates.append(trade.entry_datetime.strftime('%Y-%m-%d'))
+            
+            # R-Multiple
+            initial_risk_money = abs(trade.entry_price - trade.initial_stop_loss) * trade.position_size * 100000 # Simplified
+            if initial_risk_money > 0:
+                r_multiples.append(trade.net_profit / initial_risk_money)
+
+            # Monthly Performance
+            month_key = trade.entry_datetime.strftime('%Y-%m')
+            monthly_performance[month_key] += trade.net_profit
+
+        # Bin R-multiples
+        r_bins = {"<-2R": 0, "-2R to -1R": 0, "-1R to 0R": 0, "0R to 1R": 0, "1R to 2R": 0, ">2R": 0}
+        for r in r_multiples:
+            if r <= -2: r_bins["<-2R"] += 1
+            elif -2 < r <= -1: r_bins["-2R to -1R"] += 1
+            elif -1 < r < 0: r_bins["-1R to 0R"] += 1
+            elif 0 <= r < 1: r_bins["0R to 1R"] += 1
+            elif 1 <= r < 2: r_bins["1R to 2R"] += 1
+            else: r_bins[">2R"] += 1
+        
+        r_dist_labels, r_dist_data = list(r_bins.keys()), list(r_bins.values())
+        
+        # Finalize Monthly Performance data
+        sorted_months = sorted(monthly_performance.keys())
+        monthly_labels, monthly_data = sorted_months, [monthly_performance[m] for m in sorted_months]
+
         return jsonify({
             'metrics': {
-                'winRate': 0,
-                'riskReward': 0,
-                'avgWinLoss': 0,
-                'profitFactor': 0
+                'tradeCount': total_trades, 'winRate': round(win_rate, 2), 'riskReward': round(risk_reward_ratio, 2),
+                'avgWinLoss': f"${avg_win:.2f} / ${avg_loss:.2f}", 'profitFactor': round(profit_factor, 2),
+                'avgDuration': avg_duration_str, 'maxWinStreak': max_win_streak, 'maxLossStreak': max_loss_streak,
+                'kellyCriterion': round(kelly_criterion * 100, 2), 'expectancy': round(expectancy, 2)
             },
             'charts': {
-                'equityCurve': {'labels': [], 'data': []},
-                'winLossDistribution': {'wins': 0, 'losses': 0},
-                'monthlyPerformance': {'labels': [], 'data': []},
-                'drawdownAnalysis': {'labels': [], 'data': []}
+                'equityCurve': {'labels': dates, 'data': equity_curve},
+                'winLossDistribution': {'wins': win_count, 'losses': loss_count},
+                'monthlyPerformance': {'labels': monthly_labels, 'data': monthly_data},
+                'drawdownAnalysis': {'labels': dates, 'data': drawdown_data},
+                'rMultipleDistribution': {'labels': r_dist_labels, 'data': r_dist_data}
             }
         })
-
-    # Calculate metrics
-    total_trades = len(trades)
-    winning_trades = sum(1 for trade in trades if trade['profit'] > 0)
-    losing_trades = sum(1 for trade in trades if trade['profit'] < 0)
-    
-    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-    
-    total_profit = sum(trade['profit'] for trade in trades if trade['profit'] > 0)
-    total_loss = abs(sum(trade['profit'] for trade in trades if trade['profit'] < 0))
-    
-    avg_win = total_profit / winning_trades if winning_trades > 0 else 0
-    avg_loss = total_loss / losing_trades if losing_trades > 0 else 0
-    
-    risk_reward = avg_win / avg_loss if avg_loss != 0 else 0
-    profit_factor = total_profit / total_loss if total_loss != 0 else 0
-
-    # Prepare equity curve data
-    equity_curve = []
-    current_equity = 0
-    dates = []
-    
-    for trade in sorted(trades, key=lambda x: x['date']):
-        current_equity += trade['profit']
-        equity_curve.append(current_equity)
-        dates.append(trade['date'].strftime('%Y-%m-%d'))
-
-    # Calculate drawdown
-    drawdown = []
-    peak = 0
-    for equity in equity_curve:
-        if equity > peak:
-            peak = equity
-        drawdown_pct = ((peak - equity) / peak * 100) if peak > 0 else 0
-        drawdown.append(drawdown_pct)
-
-    # Calculate monthly performance
-    monthly_performance = {}
-    for trade in trades:
-        month_key = trade['date'].strftime('%Y-%m')
-        if month_key not in monthly_performance:
-            monthly_performance[month_key] = 0
-        monthly_performance[month_key] += trade['profit']
-
-    monthly_labels = sorted(monthly_performance.keys())
-    monthly_data = [monthly_performance[month] for month in monthly_labels]
-
-    return jsonify({
-        'metrics': {
-            'winRate': round(win_rate, 2),
-            'riskReward': round(risk_reward, 2),
-            'avgWinLoss': round(avg_win / avg_loss if avg_loss != 0 else 0, 2),
-            'profitFactor': round(profit_factor, 2)
-        },
-        'charts': {
-            'equityCurve': {
-                'labels': dates,
-                'data': equity_curve
-            },
-            'winLossDistribution': {
-                'wins': winning_trades,
-                'losses': losing_trades
-            },
-            'monthlyPerformance': {
-                'labels': monthly_labels,
-                'data': monthly_data
-            },
-            'drawdownAnalysis': {
-                'labels': dates,
-                'data': drawdown
-            }
-        }
-    })
-
-def get_all_trades():
-    conn = get_db_connection()
-    trades = conn.execute('SELECT * FROM trades ORDER BY date').fetchall()
-    conn.close()
-    return [dict(trade) for trade in trades]
+    except Exception as e:
+        app.logger.error(f"Error in advanced analysis endpoint: {e}")
+        return jsonify({'error': 'Failed to generate analysis data'}), 500
 
 if __name__ == '__main__':
     # The `run_app` function will be the target for our thread
     def run_app():
-        app.run(host='127.0.0.1', port=5000)
+        # Using waitress as a production-ready server
+        from waitress import serve
+        serve(app, host='127.0.0.1', port=5000)
 
     # We start the Flask server in a separate thread, so it doesn't block the GUI
     server_thread = threading.Thread(target=run_app)

@@ -78,36 +78,70 @@
 
     <div class="container mt-4">
         <div class="row">
-            <!-- Key Metrics -->
-            <div class="col-md-3">
-                <div class="card metric-card">
-                    <div class="card-body text-center">
+            <!-- First Row of Metrics -->
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <div class="metric-value" id="tradeCount">0</div>
+                        <div class="metric-label">Total Trades</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
                         <div class="metric-value" id="winRate">0%</div>
                         <div class="metric-label">Win Rate</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card metric-card">
-                    <div class="card-body text-center">
-                        <div class="metric-value" id="riskReward">0.00</div>
-                        <div class="metric-label">Risk/Reward Ratio</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card metric-card">
-                    <div class="card-body text-center">
-                        <div class="metric-value" id="avgWinLoss">0.00</div>
-                        <div class="metric-label">Avg Win/Loss</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card metric-card">
-                    <div class="card-body text-center">
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
                         <div class="metric-value" id="profitFactor">0.00</div>
                         <div class="metric-label">Profit Factor</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <div class="metric-value" id="expectancy">$0.00</div>
+                        <div class="metric-label">Expectancy</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Second Row of Metrics -->
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card bg-light h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <div class="metric-value text-dark" id="avgDuration">N/A</div>
+                        <div class="metric-label text-secondary">Avg. Duration</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card bg-light h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <div class="metric-value text-dark" id="riskReward">0.00</div>
+                        <div class="metric-label text-secondary">Avg. Risk/Reward</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card bg-light h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <div class="metric-value text-success" id="maxWinStreak">0</div>
+                        <div class="metric-label text-secondary">Max Win Streak</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-4">
+                <div class="card bg-light h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <div class="metric-value text-danger" id="maxLossStreak">0</div>
+                        <div class="metric-label text-secondary">Max Loss Streak</div>
                     </div>
                 </div>
             </div>
@@ -159,6 +193,36 @@
                 </div>
             </div>
         </div>
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">R-Multiple Distribution</h5>
+                        <div class="chart-container">
+                            <canvas id="rMultipleDistribution"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Advanced Metrics</h5>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Kelly Criterion
+                                <span class="badge bg-primary rounded-pill" id="kellyCriterion">0%</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Avg. Win / Avg. Loss
+                                <span class="badge bg-secondary rounded-pill" id="avgWinLoss">$0 / $0</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -172,10 +236,16 @@
             });
 
         function updateMetrics(metrics) {
+            document.getElementById('tradeCount').textContent = metrics.tradeCount;
             document.getElementById('winRate').textContent = metrics.winRate + '%';
-            document.getElementById('riskReward').textContent = metrics.riskReward.toFixed(2);
-            document.getElementById('avgWinLoss').textContent = metrics.avgWinLoss.toFixed(2);
             document.getElementById('profitFactor').textContent = metrics.profitFactor.toFixed(2);
+            document.getElementById('expectancy').textContent = `$${metrics.expectancy.toFixed(2)}`;
+            document.getElementById('avgDuration').textContent = metrics.avgDuration;
+            document.getElementById('riskReward').textContent = metrics.riskReward.toFixed(2);
+            document.getElementById('maxWinStreak').textContent = metrics.maxWinStreak;
+            document.getElementById('maxLossStreak').textContent = metrics.maxLossStreak;
+            document.getElementById('kellyCriterion').textContent = `${metrics.kellyCriterion.toFixed(2)}%`;
+            document.getElementById('avgWinLoss').textContent = metrics.avgWinLoss;
         }
 
         function createCharts(charts) {
@@ -246,6 +316,28 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false
+                }
+            });
+
+            // R-Multiple Distribution
+            new Chart(document.getElementById('rMultipleDistribution'), {
+                type: 'bar',
+                data: {
+                    labels: charts.rMultipleDistribution.labels,
+                    datasets: [{
+                        label: 'Number of Trades',
+                        data: charts.rMultipleDistribution.data,
+                        backgroundColor: '#6f42c1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
                 }
             });
         }

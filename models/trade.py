@@ -21,8 +21,8 @@ class Trade(db.Model):
     review = db.Column(db.Text)
     emotions = db.Column(db.String(100))
     tags = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationship with TradeImage
     images = db.relationship('TradeImage', backref='trade', lazy=True)
@@ -46,7 +46,7 @@ class Trade(db.Model):
             'review': self.review,
             'emotions': self.emotions,
             'tags': self.tags,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'images': [image.to_dict() for image in self.images]
         } 
