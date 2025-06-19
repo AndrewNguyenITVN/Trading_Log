@@ -6,58 +6,100 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Advanced Analysis - Trading Journal</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/boxicons@2.0.7/css/boxicons.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/boxicons@2.0.9/css/boxicons.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js">
+    </script>
     <style>
         body {
-            background-color: #f8f9fa;
+            background-color: #f4f7fc;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .navbar {
+            box-shadow: 0 2px 4px rgba(0, 0, 0, .05) !important;
         }
 
         .card {
-            border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-        }
-
-        .metric-card {
-            background: linear-gradient(45deg, #4e73df, #224abe);
-            color: white;
             border: none;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease-in-out;
         }
 
-        .metric-value {
-            font-size: 24px;
-            font-weight: bold;
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
         }
 
-        .metric-label {
-            font-size: 14px;
-            opacity: 0.8;
+        .card-header,
+        .card-footer {
+            background-color: transparent;
+            border-bottom: 1px solid #eef2f9;
         }
 
-        .chart-container {
-            position: relative;
-            height: 300px;
-            margin-bottom: 20px;
+        .metric-card .card-body {
+            display: flex;
+            align-items: center;
         }
 
-        .nav-link {
-            color: #4e73df;
+        .metric-card .icon {
+            font-size: 36px;
+            padding: 20px;
+            border-radius: 50%;
+            margin-right: 20px;
         }
 
-        .nav-link:hover {
-            color: #224abe;
+        .metric-card .value {
+            font-size: 2rem;
+            font-weight: 600;
         }
 
-        .nav-link.active {
-            background-color: #4e73df !important;
-            color: white !important;
+        .metric-card .label {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .text-win {
+            color: #28a745 !important;
+        }
+
+        .bg-win-light {
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+
+        .text-loss {
+            color: #dc3545 !important;
+        }
+
+        .bg-loss-light {
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+
+        .text-primary {
+            color: #4e73df !important;
+        }
+
+        .bg-primary-light {
+            background-color: rgba(78, 115, 223, 0.1);
+        }
+
+        .text-warning {
+            color: #f6c23e !important;
+        }
+
+        .bg-warning-light {
+            background-color: rgba(246, 194, 62, 0.1);
         }
     </style>
 </head>
 
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+    <nav class="navbar navbar-expand-lg navbar-light bg-white sticky-top">
         <div class="container">
             <a class="navbar-brand" href="/">Trading Journal</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -76,149 +118,113 @@
         </div>
     </nav>
 
-    <div class="container mt-4">
+    <div class="container-fluid mt-4 px-4">
         <div class="row">
-            <!-- First Row of Metrics -->
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card metric-card h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value" id="tradeCount">0</div>
-                        <div class="metric-label">Total Trades</div>
+            <!-- Main Content Column -->
+            <div class="col-lg-9">
+                <!-- Top Metrics Row -->
+                <div class="row">
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="card metric-card h-100">
+                            <div class="card-body">
+                                <div class="icon bg-primary-light text-primary"><i class='bx bx-list-ol'></i></div>
+                                <div>
+                                    <div class="value" id="tradeCount">0</div>
+                                    <div class="label">Total Trades</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="card metric-card h-100">
+                            <div class="card-body">
+                                <div class="icon bg-win-light text-win"><i class='bx bx-pie-chart-alt-2'></i></div>
+                                <div>
+                                    <div class="value" id="winRate">0%</div>
+                                    <div class="label">Win Rate</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="card metric-card h-100">
+                            <div class="card-body">
+                                <div class="icon bg-warning-light text-warning"><i class='bx bx-trending-up'></i></div>
+                                <div>
+                                    <div class="value" id="profitFactor">0.00</div>
+                                    <div class="label">Profit Factor</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="card metric-card h-100">
+                            <div class="card-body">
+                                <div class="icon bg-primary-light text-primary"><i class='bx bx-target-lock'></i></div>
+                                <div>
+                                    <div class="value" id="expectancy">$0.00</div>
+                                    <div class="label">Expectancy</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card metric-card h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value" id="winRate">0%</div>
-                        <div class="metric-label">Win Rate</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card metric-card h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value" id="profitFactor">0.00</div>
-                        <div class="metric-label">Profit Factor</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card metric-card h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value" id="expectancy">$0.00</div>
-                        <div class="metric-label">Expectancy</div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Second Row of Metrics -->
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card bg-light h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value text-dark" id="avgDuration">N/A</div>
-                        <div class="metric-label text-secondary">Avg. Duration</div>
+                <!-- Main Charts -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0"><i class='bx bx-line-chart me-2'></i>Equity Curve</h5>
                     </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card bg-light h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value text-dark" id="riskReward">0.00</div>
-                        <div class="metric-label text-secondary">Avg. Risk/Reward</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card bg-light h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value text-success" id="maxWinStreak">0</div>
-                        <div class="metric-label text-secondary">Max Win Streak</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-4">
-                <div class="card bg-light h-100">
-                    <div class="card-body text-center d-flex flex-column justify-content-center">
-                        <div class="metric-value text-danger" id="maxLossStreak">0</div>
-                        <div class="metric-label text-secondary">Max Loss Streak</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Charts -->
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">Equity Curve</h5>
-                        <div class="chart-container">
+                        <div class="chart-container" style="height: 350px;">
                             <canvas id="equityCurve"></canvas>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Win/Loss Distribution</h5>
-                        <div class="chart-container">
-                            <canvas id="winLossDistribution"></canvas>
-                        </div>
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0"><i class='bx bx-bar-chart-alt-2 me-2'></i>R-Multiple Distribution
+                        </h5>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">Monthly Performance</h5>
-                        <div class="chart-container">
-                            <canvas id="monthlyPerformance"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Drawdown Analysis</h5>
-                        <div class="chart-container">
-                            <canvas id="drawdownAnalysis"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">R-Multiple Distribution</h5>
-                        <div class="chart-container">
+                        <div class="chart-container" style="height: 300px;">
                             <canvas id="rMultipleDistribution"></canvas>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card">
+
+            <!-- Right Sidebar Column -->
+            <div class="col-lg-3">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0"><i class='bx bx-stats me-2'></i>Key Statistics</h5>
+                    </div>
                     <div class="card-body">
-                        <h5 class="card-title">Advanced Metrics</h5>
                         <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Kelly Criterion
-                                <span class="badge bg-primary rounded-pill" id="kellyCriterion">0%</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Avg. Win / Avg. Loss
-                                <span class="badge bg-secondary rounded-pill" id="avgWinLoss">$0 / $0</span>
-                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">Avg. Duration
+                                <span id="avgDuration">N/A</span></li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">Avg. R/R <span
+                                    id="riskReward">0.00</span></li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">Max Win Streak
+                                <span class="text-win fw-bold" id="maxWinStreak">0</span></li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">Max Loss
+                                Streak <span class="text-loss fw-bold" id="maxLossStreak">0</span></li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">Avg. Win /
+                                Loss <span id="avgWinLoss">$0/$0</span></li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">Kelly
+                                Criterion <span class="badge bg-primary rounded-pill" id="kellyCriterion">0%</span></li>
                         </ul>
+                    </div>
+                </div>
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0"><i class='bx bx-calendar-check me-2'></i>Monthly Performance</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container" style="height: 250px;">
+                            <canvas id="monthlyPerformance"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
